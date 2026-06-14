@@ -1,5 +1,17 @@
 # Decision Audit Engine
 
+## Live Demo
+
+App:
+https://decision-audit-engine-1.onrender.com
+
+API Docs:
+https://decision-audit-engine-1.onrender.com/docs
+
+Production-grade AI decision logging system...
+
+# Decision Audit Engine
+
 > Production-grade AI decision logging system. Every LLM call produces a traceable audit record with reasoning chain, confidence score, hash-chained integrity, and automated escalation for low-confidence decisions.
 
 [![Python](https://img.shields.io/badge/Python-3.11-blue?style=flat-square&logo=python)]()
