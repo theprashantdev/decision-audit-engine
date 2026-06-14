@@ -1,44 +1,31 @@
-# 🧠 Decision Audit Engine
+# Decision Audit Engine
 
-> Every AI decision leaves a trace. Every trace is reviewable. Every review is actionable.
+> Production-grade AI decision logging system. Every LLM call produces a traceable audit record with reasoning chain, confidence score, hash-chained integrity, and automated escalation for low-confidence decisions.
 
-[![Python](https://img.shields.io/badge/Python-3.11-blue?style=flat-square&logo=python)](https://python.org)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.111-green?style=flat-square&logo=fastapi)](https://fastapi.tiangolo.com)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-blue?style=flat-square&logo=postgresql)](https://postgresql.org)
+[![Python](https://img.shields.io/badge/Python-3.11-blue?style=flat-square&logo=python)]()
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.111-green?style=flat-square&logo=fastapi)]()
 [![License](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](LICENSE)
+[![CI](https://github.com/theprashantdev/decision-audit-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/theprashantdev/decision-audit-engine/actions/workflows/ci.yml)
 
-## What This Solves
+## What It Does
 
-Every production AI system eventually faces this question: **"Why did it decide that?"**
+Every call to `/api/decide` does four things in sequence:
+1. Sends the prompt and context to an LLM via OpenRouter
+2. Extracts a structured decision: label, confidence score, reasoning trace
+3. Writes an audit record to the database with a SHA-256 hash chained to the previous entry
+4. Escalates automatically if confidence falls below the configured threshold
 
-Most systems can't answer. This engine solves that. It wraps any LLM call and automatically records:
-- The full input context
-- The model's output
-- A confidence score
-- A structured reasoning trace
-- Whether human escalation was triggered
-- A tamper-evident audit log entry
+The result is an immutable, tamper-evident log of every AI decision your system makes — queryable, auditable, and explainable to anyone who wasn't in the room.
 
-## Architecture
+## API Endpoints
 
-```
-┌─────────────┐    ┌──────────────────┐    ┌────────────────┐
-│   Client    │───▶│  FastAPI Server  │───▶│  LLM Provider  │
-│  (any app)  │    │  /api/decide     │    │  (OpenRouter)  │
-└─────────────┘    └────────┬─────────┘    └───────┬────────┘
-                            │                       │
-                   ┌────────▼─────────┐             │
-                   │  Audit Logger    │◀────────────┘
-                   │  - confidence    │
-                   │  - trace         │
-                   │  - escalation    │
-                   └────────┬─────────┘
-                            │
-                   ┌────────▼─────────┐
-                   │   PostgreSQL     │
-                   │  audit_decisions │
-                   └──────────────────┘
-```
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/decide` | Submit a prompt, get a decision + audit record |
+| `GET` | `/api/audit/{id}` | Retrieve a specific audit record by ID |
+| `GET` | `/api/audit/history/all` | List all decisions (paginated, default 50) |
+| `GET` | `/api/audit/escalations/all` | List only escalated decisions |
+| `GET` | `/health` | Health check |
 
 ## Quick Start
 
@@ -46,79 +33,116 @@ Most systems can't answer. This engine solves that. It wraps any LLM call and au
 git clone https://github.com/theprashantdev/decision-audit-engine
 cd decision-audit-engine
 pip install -r requirements.txt
-cp .env.example .env  # add your OpenRouter API key
-python -m uvicorn app.main:app --reload
+cp .env.example .env
+# Edit .env — set OPENROUTER_API_KEY and DATABASE_URL
+uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-API will be live at `http://localhost:8000`
+Open **http://localhost:8000/docs** for the interactive API docs.
 
-## API Reference
+## Environment Variables
 
-### `POST /api/decide`
-Send a prompt, get a decision + full audit record.
-
-```json
-{
-  "prompt": "Should we approve this loan application?",
-  "context": { "applicant_score": 720, "loan_amount": 50000 },
-  "threshold": 0.8
-}
+```env
+OPENROUTER_API_KEY=your_openrouter_api_key_here
+OPENROUTER_MODEL=openai/gpt-4o-mini
+DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/audit_engine
+ESCALATION_THRESHOLD=0.75
+APP_ENV=development
+SECRET_KEY=change_this_in_production
 ```
 
-**Response:**
+For local development without PostgreSQL, use SQLite:
+```env
+DATABASE_URL=sqlite+aiosqlite:///./audit.db
+```
+
+## Running Tests
+
+Tests use SQLite in-memory — no database setup required.
+
+```bash
+pytest --tb=short -v
+```
+
+## Docker
+
+```bash
+docker build -t decision-audit-engine .
+docker run -p 8000:8000 --env-file .env decision-audit-engine
+```
+
+## Example Request
+
+```bash
+curl -X POST http://localhost:8000/api/decide \
+  -H 'Content-Type: application/json' \
+  -d '{"prompt": "Should we approve this loan application?", "context": {"credit_score": 720, "income": 85000}}'
+```
+
 ```json
 {
   "decision": "APPROVE",
-  "confidence": 0.91,
-  "reasoning": "Score above threshold, amount within acceptable range...",
+  "confidence": 0.89,
+  "reasoning": "Credit score above threshold and income sufficient for requested amount.",
   "escalated": false,
-  "audit_id": "aud_01HX...",
-  "timestamp": "2026-06-13T16:30:00Z"
+  "escalation_reason": null,
+  "audit_id": "aud_3f9a1c2b7d4e",
+  "timestamp": "2026-06-14T06:00:00.000000+00:00"
 }
 ```
 
-### `GET /api/audit/{audit_id}`
-Retrieve any past decision by its audit ID.
+## Architecture
 
-### `GET /api/audit/history?limit=50`
-Full paginated audit history with filtering.
-
-### `GET /api/audit/escalations`
-All decisions that triggered human escalation.
-
-## Key Features
-
-- ✅ **Zero-config audit logging** — every call automatically recorded
-- ✅ **Confidence scoring** — model uncertainty quantified per decision
-- ✅ **Auto-escalation** — low-confidence decisions flagged for human review
-- ✅ **Tamper-evident logs** — SHA-256 chained audit entries
-- ✅ **Full REST API** — drop into any existing system
-- ✅ **Async PostgreSQL** — production-ready persistence
+```
+POST /api/decide
+       │
+       ▼
+  Input Validation (Pydantic)
+       │
+       ▼
+  OpenRouter LLM Call
+  (decision + confidence + reasoning)
+       │
+       ▼
+  Escalation Check
+  (confidence < threshold?)
+       │
+       ▼
+  Hash Chain
+  SHA-256(entry_data + prev_hash)
+       │
+       ▼
+  Write to Database
+  (AuditDecision record)
+       │
+       ▼
+  Return Response
+```
 
 ## Project Structure
 
 ```
 decision-audit-engine/
 ├── app/
-│   ├── main.py           # FastAPI entrypoint
-│   ├── routes/
-│   │   ├── decide.py     # Decision endpoint
-│   │   └── audit.py      # Audit retrieval endpoints
-│   ├── engine/
-│   │   ├── decider.py    # Core LLM decision logic
-│   │   ├── scorer.py     # Confidence scoring
-│   │   └── escalator.py  # Escalation logic
+│   ├── core/
+│   │   └── config.py          # Pydantic settings
 │   ├── db/
-│   │   ├── models.py     # SQLAlchemy models
-│   │   └── session.py    # DB connection
-│   └── core/
-│       └── config.py     # Settings & env
+│   │   ├── models.py           # SQLAlchemy models + hash logic
+│   │   └── session.py          # Async engine + session factory
+│   ├── engine/
+│   │   ├── decider.py          # OpenRouter LLM call
+│   │   └── escalator.py        # Confidence threshold logic
+│   ├── routes/
+│   │   ├── decide.py           # POST /api/decide
+│   │   └── audit.py            # GET /api/audit/*
+│   └── main.py                 # FastAPI app + lifespan
 ├── tests/
-│   ├── test_decide.py
-│   └── test_audit.py
+│   └── test_decide.py
+├── conftest.py                  # SQLite test fixtures
+├── pytest.ini
 ├── requirements.txt
-├── .env.example
-└── README.md
+├── Dockerfile
+└── .env.example
 ```
 
 ## License
