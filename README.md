@@ -1,16 +1,13 @@
 # Decision Audit Engine
 
-## Live Demo
 
-App:
+API Endpoint:
 https://decision-audit-engine-1.onrender.com
 
-API Docs:
+API Documentation:
 https://decision-audit-engine-1.onrender.com/docs
 
 Production-grade AI decision logging system...
-
-# Decision Audit Engine
 
 > Production-grade AI decision logging system. Every LLM call produces a traceable audit record with reasoning chain, confidence score, hash-chained integrity, and automated escalation for low-confidence decisions.
 
