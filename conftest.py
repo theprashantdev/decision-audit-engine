@@ -1,28 +1,37 @@
+import os
+os.environ.setdefault("OPENROUTER_API_KEY", "dummy_key_for_ci")
+os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
+os.environ.setdefault("ESCALATION_THRESHOLD", "0.75")
+os.environ.setdefault("APP_ENV", "test")
+os.environ.setdefault("SECRET_KEY", "ci_secret")
+
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-from app.db.models import Base
-from app.db.session import get_db
-from app.main import app
+from httpx import AsyncClient, ASGITransport
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
 @pytest_asyncio.fixture(scope="function")
-async def db_session():
+async def async_db():
+    from app.db.models import Base
     engine = create_async_engine(TEST_DATABASE_URL, echo=False)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    session_factory = async_sessionmaker(engine, expire_on_commit=False)
-    async with session_factory() as session:
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as session:
         yield session
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
     await engine.dispose()
 
-@pytest.fixture(autouse=True)
-def override_db(db_session):
-    async def _get_db_override():
-        yield db_session
-    app.dependency_overrides[get_db] = _get_db_override
-    yield
+@pytest_asyncio.fixture(scope="function")
+async def client(async_db):
+    from app.db.session import get_db
+    from app.main import app
+    async def _override():
+        yield async_db
+    app.dependency_overrides[get_db] = _override
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        yield c
     app.dependency_overrides.clear()

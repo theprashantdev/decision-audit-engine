@@ -21,10 +21,4 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run tests
-        env:
-          OPENROUTER_API_KEY: dummy_key_for_ci
-          DATABASE_URL: sqlite+aiosqlite:///:memory:
-          ESCALATION_THRESHOLD: '0.75'
-          APP_ENV: test
-          SECRET_KEY: ci_secret
         run: pytest --tb=short -v
